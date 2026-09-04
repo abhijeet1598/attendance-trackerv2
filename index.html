@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Office Attendance Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="holidays.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Office Attendance Ledger</h1>
+    <button class="signout-btn" id="exportBtn">Export backup</button>
+  </div>
+  <div class="sub" id="todayLabel">— loading —</div>
+
+  <div class="tabbar">
+    <button class="tab-btn active" id="tabTracker">Tracker</button>
+    <button class="tab-btn" id="tabReport">Quarterly Report</button>
+  </div>
+
+  <div class="view active" id="viewTracker">
+   <div class="tracker-grid">
+    <div class="col-left">
+    <div class="badge">
+      <div class="badge-top">
+        <div class="badge-id" id="badgeId">RTO · TRACKER</div>
+        <div class="badge-quarter" id="badgeQuarter">Q- 20--</div>
+      </div>
+      <div class="gauge-row">
+        <div class="gauge-wrap">
+          <svg width="128" height="128" viewBox="0 0 128 128">
+            <circle cx="64" cy="64" r="54" fill="none" stroke="var(--paper-2)" stroke-width="10"/>
+            <circle id="gaugeProgress" cx="64" cy="64" r="54" fill="none" stroke="var(--in-office)" stroke-width="10"
+                    stroke-linecap="round" transform="rotate(-90 64 64)" stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+            <line id="goalTick" x1="64" y1="8" x2="64" y2="18" stroke="var(--danger)" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <div class="gauge-num">
+            <div class="pct" id="pctText">0%</div>
+            <div class="lbl">IN-OFFICE</div>
+          </div>
+        </div>
+        <div class="badge-stats">
+          <div class="stat-line"><span>Office days</span><b id="statOffice">0</b></div>
+          <div class="stat-line"><span>Effective days (qtr)</span><b id="statTotal">0</b></div>
+          <div class="stat-line"><span>WFH days</span><b id="statOther">0</b></div>
+          <div class="stat-line"><span>Shift allowance (month)</span><b id="statAllowance">₹0</b></div>
+          <div class="stat-line"><span>Comp-off balance</span><b id="statCompOff">0</b></div>
+          <div class="stat-line"><span>Goal</span><b id="statGoal">50%</b></div>
+        </div>
+      </div>
+      <div class="goal-msg" id="goalMsg">Loading…</div>
+    </div>
+
+    <div class="settings-row">
+      Quarterly goal
+      <input type="number" id="goalInput" min="1" max="100" value="50" /> %
+    </div>
+    </div><!-- /col-left -->
+
+    <div class="col-right">
+    <div class="cal-card">
+      <div class="cal-nav">
+        <button id="prevMonth">‹</button>
+        <div class="cal-title" id="calTitle">Month 20--</div>
+        <button id="nextMonth">›</button>
+      </div>
+      <div class="mass-row">
+        <button class="mass-toggle-btn" id="massToggleBtn"><span class="mass-toggle-icon">✦</span>Select multiple days</button>
+        <button class="mass-quick-btn" id="massQuickBtn" style="display:none;"><span class="mass-quick-icon">✓</span>Select weekdays</button>
+      </div>
+      <div class="cal-grid" id="calDow"></div>
+      <div class="cal-grid" id="calGrid"></div>
+    </div>
+
+    <div class="month-holidays" id="monthHolidays" style="display:none;"></div>
+
+    <div class="legend" id="legend"></div>
+    <div class="note">Effective days = weekdays (Mon–Fri) minus days marked <b>PTO</b>, <b>Holiday</b>, and <b>Comp-off</b>. WFH stays in the count but doesn't add an office day. Every logged In-office, WFH, or Weekend shift day earns a <b>₹500 second-shift allowance</b>. Comp-off is earned for working on a company holiday or a weekend shift, and used when you mark a weekday as Comp-off. Tap any date to log it, or use "Select multiple days" to set several days at once. Days marked 🔒 default to Holiday because your organization set them — tap one to override it just for yourself (e.g. if you actually came in), or clear the override to restore the holiday. All data is stored only in this browser — use "Export backup" to save a copy, since clearing browser data will erase it.</div>
+    </div><!-- /col-right -->
+   </div><!-- /tracker-grid -->
+  </div><!-- /viewTracker -->
+
+  <div class="view" id="viewReport">
+    <div class="report-card">
+      <div id="reportBody"><div class="report-empty">Loading report…</div></div>
+    </div>
+    <div class="note">Each bar shows your in-office % for that quarter. The red mark shows your current goal threshold.</div>
+  </div>
+
+</div>
+
+<div class="bulk-bar" id="bulkBar">
+  <div class="bulk-bar-count" id="bulkCount">0 days selected</div>
+  <div class="bulk-bar-actions">
+    <button class="bulk-cancel-btn" id="bulkCancelBtn">Cancel</button>
+    <button class="bulk-apply-btn" id="bulkApplyBtn">Apply status</button>
+  </div>
+</div>
+
+<div class="sheet-overlay" id="sheetOverlay">
+  <div class="sheet">
+    <div class="sheet-title" id="sheetTitle">Tuesday, Jan 1</div>
+    <div class="sheet-sub" id="sheetSub">Choose a status for this day</div>
+    <div class="sheet-grid" id="sheetGrid"></div>
+    <button class="clear-btn" id="clearBtn">Clear status</button>
+
+    <button class="close-btn" id="closeBtn">Done</button>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json" style="display:none;" />
+
+<script>
+const STATUSES = [
+  {key:'in-office', label:'In-office', color:'var(--in-office)', tag:'Office'},
+  {key:'wfh',       label:'WFH',       color:'var(--wfh)',       tag:'WFH'},
+  {key:'pto',       label:'PTO',       color:'var(--pto)',       tag:'PTO'},
+  {key:'holiday',   label:'Holiday',   color:'var(--holiday)',   tag:'HOL'},
+  {key:'satw',      label:'Weekend shift', color:'var(--satw)',  tag:'SAT'},
+  {key:'comp-off',  label:'Comp-off',  color:'var(--compoff)',   tag:'C/O'},
+];
+const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.key,s]));
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOWS = ['S','M','T','W','T','F','S'];
+
+const ENTRIES_KEY = 'attendance_entries_v1';   // { 'YYYY-MM-DD': status }
+const SETTINGS_KEY = 'attendance_settings_v1'; // { goal: 50 }
+
+let today = new Date();
+let viewYear = today.getFullYear();
+let viewMonth = today.getMonth();
+let goalPct = 50;
+let activeCellDate = null;
+let massMode = false;
+let selectedDates = new Set(); // 'YYYY-MM-DD' keys, persists across month navigation
+
+function pad(n){return n<10?'0'+n:''+n;}
+function dayKey(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d);}
+function isWeekend(y,m,d){ const dow = new Date(y,m,d).getDay(); return dow===0 || dow===6; }
+// Custom fiscal quarters: Q1 Feb-Apr, Q2 May-Jul, Q3 Aug-Oct, Q4 Nov-Jan (spans into next year).
+// A quarter is labeled by the calendar year its first month falls in (e.g. Q4 2026 = Nov/Dec 2026 + Jan 2027).
+const QUARTER_START_MONTH = {1:1, 2:4, 3:7, 4:10}; // 0-indexed month (Feb=1, May=4, Aug=7, Nov=10)
+function quarterInfo(y,m){
+  if(m===0) return {q:4, fy:y-1};       // January belongs to the previous fiscal year's Q4
+  if(m>=1 && m<=3) return {q:1, fy:y};  // Feb-Apr
+  if(m>=4 && m<=6) return {q:2, fy:y};  // May-Jul
+  if(m>=7 && m<=9) return {q:3, fy:y};  // Aug-Oct
+  return {q:4, fy:y};                   // Nov-Dec
+}
+function quarterMonths(y,m){
+  const {q, fy} = quarterInfo(y,m);
+  const startMonth = QUARTER_START_MONTH[q];
+  const months = [];
+  for(let i=0;i<3;i++){
+    const mm = startMonth + i;
+    if(mm>11){ months.push({y:fy+1, m:mm-12}); } // January rolling into next calendar year
+    else{ months.push({y:fy, m:mm}); }
+  }
+  return months;
+}
+
+function loadEntries(){
+  try{ return JSON.parse(localStorage.getItem(ENTRIES_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function isCompanyHoliday(dk){
+  return typeof COMPANY_HOLIDAYS !== 'undefined' && Object.prototype.hasOwnProperty.call(COMPANY_HOLIDAYS, dk);
+}
+// Status a date should be treated as: a company holiday always wins over
+// whatever the user has (or hasn't) set locally for that date.
+function effectiveStatus(entries, dk){
+  if(entries[dk]) return entries[dk]; // an explicit user entry always overrides the default holiday
+  return isCompanyHoliday(dk) ? 'holiday' : undefined;
+}
+function saveEntries(entries){
+  localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
+}
+function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+    goalPct = (s && s.goal) ? s.goal : 50;
+  }catch(e){ goalPct = 50; }
+  document.getElementById('goalInput').value = goalPct;
+}
+function saveSettings(){
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({goal: goalPct}));
+}
+
+function setStatus(y,m,d,statusKey){
+  const entries = loadEntries();
+  entries[dayKey(y,m,d)] = statusKey;
+  saveEntries(entries);
+}
+function clearStatusLocal(y,m,d){
+  const entries = loadEntries();
+  delete entries[dayKey(y,m,d)];
+  saveEntries(entries);
+}
+
+function computeQuarterStats(entries, y, m){
+  const months = quarterMonths(y,m);
+  let officeDays=0, effectiveDays=0, other=0;
+  for(const {y:yy,m:mm} of months){
+    const daysInMonth = new Date(yy,mm+1,0).getDate();
+    for(let d=1; d<=daysInMonth; d++){
+      const dk = dayKey(yy,mm,d);
+      const status = effectiveStatus(entries, dk);
+      const weekend = isWeekend(yy,mm,d);
+      if(!weekend){
+        if(status==='pto' || status==='holiday' || status==='comp-off'){ /* excluded from effective days */ }
+        else{
+          effectiveDays++;
+          if(status==='in-office') officeDays++;
+          else if(status==='wfh') other++;
+        }
+      } else if(status==='satw'){
+        officeDays++; effectiveDays++;
+      }
+    }
+  }
+  const {q, fy} = quarterInfo(y,m);
+  return {officeDays, effectiveDays, other, quarterIndex: q, fiscalYear: fy};
+}
+
+function computeMonthlyShiftAllowance(entries, y, m){
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  let eligibleDays=0;
+  for(let d=1; d<=daysInMonth; d++){
+    const status = effectiveStatus(entries, dayKey(y,m,d));
+    if(status==='in-office' || status==='wfh' || status==='satw') eligibleDays++;
+  }
+  return eligibleDays * 500;
+}
+
+function computeCompOffBalance(entries){
+  let earned=0, used=0;
+  Object.entries(entries).forEach(([dk, status])=>{
+    const [y,m,d] = dk.split('-').map(Number);
+    const weekend = isWeekend(y,m-1,d);
+    if(status==='comp-off' && !weekend) used++;
+    else if(status==='satw' && weekend) earned++;
+    else if((status==='in-office' || status==='wfh') && isCompanyHoliday(dk)) earned++;
+  });
+  return earned - used;
+}
+
+function refreshBadge(){
+  const entries = loadEntries();
+  const stats = computeQuarterStats(entries, viewYear, viewMonth);
+  const pct = stats.effectiveDays>0 ? Math.round((stats.officeDays/stats.effectiveDays)*100) : 0;
+
+  document.getElementById('badgeQuarter').textContent = 'Q'+stats.quarterIndex+' '+stats.fiscalYear;
+  document.getElementById('pctText').textContent = pct+'%';
+  document.getElementById('statOffice').textContent = stats.officeDays;
+  document.getElementById('statTotal').textContent = stats.effectiveDays;
+  document.getElementById('statOther').textContent = stats.other;
+  document.getElementById('statAllowance').textContent = '₹' + computeMonthlyShiftAllowance(entries, viewYear, viewMonth).toLocaleString('en-IN');
+  document.getElementById('statCompOff').textContent = computeCompOffBalance(entries);
+  document.getElementById('statGoal').textContent = goalPct+'%';
+
+  const circumference = 339.3;
+  const offset = circumference - (Math.min(pct,100)/100)*circumference;
+  const gauge = document.getElementById('gaugeProgress');
+  gauge.setAttribute('stroke-dashoffset', offset);
+  gauge.setAttribute('stroke', pct>=goalPct ? 'var(--in-office)' : (pct >= goalPct-15 ? 'var(--pto)' : 'var(--satw)'));
+
+  const angle = (goalPct/100)*360;
+  document.getElementById('goalTick').setAttribute('transform', `rotate(${angle} 64 64)`);
+
+  const neededOfficeDays = Math.ceil((goalPct/100)*stats.effectiveDays);
+  const shortfall = Math.max(0, neededOfficeDays - stats.officeDays);
+  const msgEl = document.getElementById('goalMsg');
+  if(shortfall===0){
+    msgEl.className='goal-msg';
+    msgEl.textContent = `Goal met — ${stats.officeDays} of ${stats.effectiveDays} effective days logged as in-office this quarter.`;
+  } else {
+    const remainingUnmarked = stats.effectiveDays - (stats.officeDays + stats.other);
+    if(remainingUnmarked >= shortfall){
+      msgEl.className='goal-msg short';
+      msgEl.textContent = `Go to office ${shortfall} more day${shortfall===1?'':'s'} this quarter to hit ${goalPct}%.`;
+    } else {
+      msgEl.className='goal-msg behind';
+      msgEl.textContent = `${shortfall} more office day${shortfall===1?'':'s'} needed, but only ${Math.max(remainingUnmarked,0)} unmarked working day${remainingUnmarked===1?'':'s'} remain.`;
+    }
+  }
+}
+
+function renderDow(){
+  const el = document.getElementById('calDow');
+  el.innerHTML='';
+  DOWS.forEach(d=>{ const c=document.createElement('div'); c.className='cal-dow'; c.textContent=d; el.appendChild(c); });
+}
+
+function renderCalendar(){
+  document.getElementById('calTitle').textContent = MONTHS[viewMonth]+' '+viewYear;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML='';
+  const entries = loadEntries();
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+
+  for(let i=0;i<firstDow;i++){
+    const c = document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c);
+  }
+  for(let d=1; d<=daysInMonth; d++){
+    const dk = dayKey(viewYear, viewMonth, d);
+    const isHoliday = isCompanyHoliday(dk);
+    const hasOverride = isHoliday && !!entries[dk];
+    const status = effectiveStatus(entries, dk);
+    const weekend = isWeekend(viewYear, viewMonth, d);
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (weekend?' weekend':'') + (status?(' st-'+status):'')
+      + (isHoliday?' holiday-marked':'')
+      + (massMode?' selectable':'') + (selectedDates.has(dk)?' mass-selected':'');
+    const isToday = viewYear===today.getFullYear() && viewMonth===today.getMonth() && d===today.getDate();
+    if(isToday) cell.classList.add('today');
+    let tagHtml = '';
+    if(status && isHoliday && !hasOverride){
+      tagHtml = `<div class="tag holiday-tag">🔒${escapeHtml(COMPANY_HOLIDAYS[dk])}</div>`;
+    } else if(status){
+      tagHtml = `<div class="tag">${STATUS_MAP[status].tag}</div>`;
+    }
+    cell.innerHTML = `<div class="daynum">${d}</div>` + tagHtml;
+    if(isHoliday){ cell.title = COMPANY_HOLIDAYS[dk] + (hasOverride ? ' (overridden)' : ''); }
+    cell.addEventListener('click', ()=>{
+      if(massMode){ toggleSelectDate(dk); }
+      else{ openSheet(viewYear, viewMonth, d); }
+    });
+    grid.appendChild(cell);
+  }
+  renderMonthHolidays();
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderMonthHolidays(){
+  const el = document.getElementById('monthHolidays');
+  if(!el) return;
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const items = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const dk = dayKey(viewYear, viewMonth, d);
+    if(isCompanyHoliday(dk)){ items.push({d, name: COMPANY_HOLIDAYS[dk]}); }
+  }
+  if(items.length===0){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='flex';
+  el.innerHTML = items.map(it=>`<div class="month-holiday-chip">🔒 ${MONTHS[viewMonth].slice(0,3)} ${it.d} — ${escapeHtml(it.name)}</div>`).join('');
+}
+
+function toggleSelectDate(dk){
+  if(selectedDates.has(dk)) selectedDates.delete(dk);
+  else selectedDates.add(dk);
+  renderCalendar();
+  updateBulkBar();
+}
+
+function updateBulkBar(){
+  const bar = document.getElementById('bulkBar');
+  const count = selectedDates.size;
+  document.getElementById('bulkCount').textContent = count + (count===1 ? ' day selected' : ' days selected');
+  bar.classList.toggle('open', count>0);
+}
+
+function setMassMode(on){
+  massMode = on;
+  document.getElementById('massToggleBtn').classList.toggle('active', massMode);
+  document.getElementById('massToggleBtn').innerHTML = massMode
+    ? '<span class="mass-toggle-icon">✓</span>Done selecting'
+    : '<span class="mass-toggle-icon">✦</span>Select multiple days';
+  document.getElementById('massQuickBtn').style.display = massMode ? '' : 'none';
+  if(!massMode){ selectedDates.clear(); updateBulkBar(); }
+  renderCalendar();
+}
+
+function selectWeekdaysThisMonth(){
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  for(let d=1; d<=daysInMonth; d++){
+    const dk = dayKey(viewYear, viewMonth, d);
+    if(!isWeekend(viewYear, viewMonth, d) && !isCompanyHoliday(dk)){ selectedDates.add(dk); }
+  }
+  renderCalendar();
+  updateBulkBar();
+}
+
+function renderLegend(){
+  const el = document.getElementById('legend'); el.innerHTML='';
+  STATUSES.forEach(s=>{
+    const item = document.createElement('div'); item.className='legend-item';
+    item.innerHTML = `<div class="legend-dot" style="background:${s.color}"></div>${s.label}`;
+    el.appendChild(item);
+  });
+}
+
+function openSheet(y,m,d){
+  activeCellDate = {y,m,d};
+  const dk = dayKey(y,m,d);
+  const entries = loadEntries();
+  const isHoliday = isCompanyHoliday(dk);
+  const hasOverride = isHoliday && !!entries[dk];
+  const dateObj = new Date(y,m,d);
+  document.getElementById('sheetTitle').textContent = dateObj.toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'});
+  if(isHoliday){
+    document.getElementById('sheetSub').textContent = hasOverride
+      ? `🔒 ${COMPANY_HOLIDAYS[dk]} — company holiday, currently overridden below. Clear to restore it.`
+      : `🔒 ${COMPANY_HOLIDAYS[dk]} — company holiday by default. Pick a status to override it just for you.`;
+  } else {
+    document.getElementById('sheetSub').textContent = 'Choose a status for this day';
+  }
+  document.getElementById('clearBtn').textContent = hasOverride ? 'Clear override (restore holiday)' : 'Clear status';
+  document.getElementById('clearBtn').style.display = '';
+  buildSheetGrid(effectiveStatus(entries, dk));
+  document.getElementById('sheetOverlay').classList.add('open');
+}
+function openBulkSheet(){
+  if(selectedDates.size===0) return;
+  activeCellDate = null;
+  document.getElementById('sheetTitle').textContent = 'Apply to selected days';
+  document.getElementById('sheetSub').textContent = `Choose a status for all ${selectedDates.size} selected day${selectedDates.size===1?'':'s'}. This will override any company holidays included in the selection.`;
+  document.getElementById('clearBtn').textContent = 'Clear status';
+  document.getElementById('clearBtn').style.display = '';
+  buildSheetGrid(null);
+  document.getElementById('sheetOverlay').classList.add('open');
+}
+function buildSheetGrid(currentStatus){
+  const grid = document.getElementById('sheetGrid'); grid.innerHTML='';
+  STATUSES.forEach(s=>{
+    const btn = document.createElement('button'); btn.className='opt-btn' + (s.key===currentStatus ? ' opt-btn-active' : '');
+    btn.innerHTML = `<div class="opt-dot" style="background:${s.color}"></div>${s.label}` + (s.key===currentStatus ? ' <span class="opt-check">✓</span>' : '');
+    btn.addEventListener('click', ()=>handleSetStatus(s.key));
+    grid.appendChild(btn);
+  });
+}
+function closeSheet(){ document.getElementById('sheetOverlay').classList.remove('open'); activeCellDate=null; }
+function handleSetStatus(statusKey){
+  if(activeCellDate){
+    const {y,m,d} = activeCellDate;
+    setStatus(y,m,d,statusKey);
+  } else if(selectedDates.size>0){
+    const entries = loadEntries();
+    selectedDates.forEach(dk=>{ entries[dk] = statusKey; });
+    saveEntries(entries);
+    selectedDates.clear();
+    updateBulkBar();
+  }
+  closeSheet();
+  renderCalendar();
+  refreshBadge();
+}
+function handleClearStatus(){
+  if(activeCellDate){
+    const {y,m,d} = activeCellDate;
+    clearStatusLocal(y,m,d);
+  } else if(selectedDates.size>0){
+    const entries = loadEntries();
+    selectedDates.forEach(dk=>{ delete entries[dk]; });
+    saveEntries(entries);
+    selectedDates.clear();
+    updateBulkBar();
+  }
+  closeSheet();
+  renderCalendar();
+  refreshBadge();
+}
+
+function goToMonth(delta){
+  viewMonth += delta;
+  if(viewMonth<0){ viewMonth=11; viewYear--; }
+  if(viewMonth>11){ viewMonth=0; viewYear++; }
+  renderCalendar();
+  refreshBadge();
+}
+
+// ---- Report view ----
+function renderReport(){
+  const entries = loadEntries();
+  const dates = Object.keys(entries);
+  const body = document.getElementById('reportBody');
+  if(dates.length === 0){
+    body.innerHTML = '<div class="report-empty">No attendance logged yet. Once you log some days on the Tracker tab, your quarterly history will show up here.</div>';
+    return;
+  }
+  const seen = new Set();
+  dates.forEach(dk=>{
+    const [y,m] = dk.split('-').map(Number);
+    const {q, fy} = quarterInfo(y, m-1); // m from the key is 1-indexed; quarterInfo expects 0-indexed
+    seen.add(fy+'-Q'+q);
+  });
+  const quarters = Array.from(seen).map(s=>{
+    const [y,qs] = s.split('-Q');
+    return { y:parseInt(y), q:parseInt(qs) };
+  }).sort((a,b)=> b.y-a.y || b.q-a.q);
+
+  body.innerHTML = '';
+  quarters.forEach(({y,q})=>{
+    const repMonth = QUARTER_START_MONTH[q];
+    const stats = computeQuarterStats(entries, y, repMonth);
+    const pct = stats.effectiveDays>0 ? Math.round((stats.officeDays/stats.effectiveDays)*100) : 0;
+    const met = pct >= goalPct;
+
+    const row = document.createElement('div');
+    row.className = 'report-row';
+    row.innerHTML = `
+      <div class="report-row-top">
+        <div class="report-q">Q${q} ${y}</div>
+        <div class="report-pct ${met?'met':'miss'}">${pct}%</div>
+      </div>
+      <div class="report-bar-track">
+        <div class="report-bar-fill ${met?'':'miss'}" style="width:${Math.min(pct,100)}%"></div>
+      </div>
+      <div class="report-meta">${stats.officeDays} office / ${stats.effectiveDays} effective days · goal ${goalPct}%</div>
+    `;
+    body.appendChild(row);
+  });
+}
+
+function switchTab(tab){
+  document.getElementById('tabTracker').classList.toggle('active', tab==='tracker');
+  document.getElementById('tabReport').classList.toggle('active', tab==='report');
+  document.getElementById('viewTracker').classList.toggle('active', tab==='tracker');
+  document.getElementById('viewReport').classList.toggle('active', tab==='report');
+  if(tab==='report'){ document.getElementById('bulkBar').classList.remove('open'); renderReport(); }
+  else{ updateBulkBar(); }
+}
+
+// ---- Export / Import backup ----
+function exportBackup(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    settings: { goal: goalPct },
+    entries: loadEntries()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `attendance-backup-${pad(today.getMonth()+1)}-${today.getFullYear()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const payload = JSON.parse(e.target.result);
+      if(payload.entries) saveEntries(payload.entries);
+      if(payload.settings && payload.settings.goal){ goalPct = payload.settings.goal; saveSettings(); }
+      renderCalendar(); refreshBadge();
+      alert('Backup imported.');
+    }catch(err){
+      alert('Could not read that file — make sure it\'s a backup exported from this app.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('tabTracker').addEventListener('click', ()=>switchTab('tracker'));
+document.getElementById('tabReport').addEventListener('click', ()=>switchTab('report'));
+document.getElementById('prevMonth').addEventListener('click', ()=>goToMonth(-1));
+document.getElementById('nextMonth').addEventListener('click', ()=>goToMonth(1));
+document.getElementById('clearBtn').addEventListener('click', handleClearStatus);
+document.getElementById('closeBtn').addEventListener('click', closeSheet);
+document.getElementById('sheetOverlay').addEventListener('click', (e)=>{ if(e.target.id==='sheetOverlay') closeSheet(); });
+document.getElementById('goalInput').addEventListener('change', (e)=>{
+  let v = parseInt(e.target.value,10);
+  if(isNaN(v) || v<1) v=1; if(v>100) v=100;
+  e.target.value = v;
+  goalPct = v;
+  saveSettings();
+  refreshBadge();
+});
+document.getElementById('exportBtn').addEventListener('click', exportBackup);
+document.getElementById('massToggleBtn').addEventListener('click', ()=>setMassMode(!massMode));
+document.getElementById('massQuickBtn').addEventListener('click', selectWeekdaysThisMonth);
+document.getElementById('bulkCancelBtn').addEventListener('click', ()=>{ selectedDates.clear(); renderCalendar(); updateBulkBar(); });
+document.getElementById('bulkApplyBtn').addEventListener('click', openBulkSheet);
+
+function init(){
+  document.getElementById('todayLabel').textContent = today.toLocaleDateString(undefined,{weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  renderDow();
+  renderLegend();
+  loadSettings();
+  renderCalendar();
+  refreshBadge();
+}
+init();
+</script>
+</body>
+<footer>
+  <div class="footer-text">Created by Abhijeet Karmakar. All data is stored locally in your browser.</div>
+</html>
